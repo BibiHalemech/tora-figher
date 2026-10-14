@@ -4,6 +4,7 @@ import { strings } from "../content/strings.he";
 import { loadSession, startRun } from "../systems/session";
 import { addDimOverlay, addSkyGround } from "../ui/backdrop";
 import { addPillButton } from "../ui/button";
+import { addMoreGamesButton } from "../ui/moreGames";
 
 export class GameOverScene extends Phaser.Scene {
   constructor() {
@@ -58,7 +59,7 @@ export class GameOverScene extends Phaser.Scene {
     addPillButton(this, {
       label: strings.playAgain,
       x: STAGE_WIDTH / 2,
-      y: 700,
+      y: 680,
       onClick: () => {
         startRun(this, session.character);
         this.scene.start(SceneKeys.StageIntro);
@@ -68,10 +69,15 @@ export class GameOverScene extends Phaser.Scene {
     addPillButton(this, {
       label: strings.backToMenu,
       x: STAGE_WIDTH / 2,
-      y: 810,
+      y: 790,
       onClick: () => {
         this.scene.start(SceneKeys.Title);
       },
+    });
+
+    addMoreGamesButton(this, {
+      x: STAGE_WIDTH / 2,
+      y: 900,
     });
   }
 }

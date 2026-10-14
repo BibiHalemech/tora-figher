@@ -5,6 +5,7 @@ import { setMusicEnabled, startBackgroundMusic, unlockAudio } from "../systems/a
 import { isMuted, setMuted } from "../systems/session";
 import { addSkyGround } from "../ui/backdrop";
 import { addPillButton } from "../ui/button";
+import { addMoreGamesButton } from "../ui/moreGames";
 
 export class TitleScene extends Phaser.Scene {
   constructor() {
@@ -62,6 +63,11 @@ export class TitleScene extends Phaser.Scene {
         startBackgroundMusic();
         this.scene.start(SceneKeys.CharacterSelect);
       },
+    });
+
+    addMoreGamesButton(this, {
+      x: STAGE_WIDTH / 2,
+      y: 600,
     });
 
     const muteLabel = isMuted() ? strings.muteOn : strings.muteOff;

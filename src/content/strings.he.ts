@@ -11,6 +11,8 @@ export const strings = {
   continue: "המשך",
   playAgain: "שחק שוב",
   backToMenu: "חזרה לתפריט",
+  moreGames: "עוד משחקים",
+  close: "סגור",
   scoreLabel: "נקודות",
   stageLabel: (n: number) => `שלב ${n}`,
   gameTitleHud: "לוחם ישיבה",

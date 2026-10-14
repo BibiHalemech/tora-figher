@@ -5,6 +5,7 @@ import { playFanfare } from "../systems/audio";
 import { loadSession } from "../systems/session";
 import { addDimOverlay, addSkyGround } from "../ui/backdrop";
 import { addPillButton } from "../ui/button";
+import { addMoreGamesButton } from "../ui/moreGames";
 
 export class VictoryScene extends Phaser.Scene {
   constructor() {
@@ -74,6 +75,11 @@ export class VictoryScene extends Phaser.Scene {
       onClick: () => {
         this.scene.start(SceneKeys.CharacterSelect);
       },
+    });
+
+    addMoreGamesButton(this, {
+      x: STAGE_WIDTH / 2,
+      y: 940,
     });
   }
 }
