@@ -17,6 +17,10 @@ export const MORE_GAMES: readonly GameLink[] = [
     title: "ניהול נכסים",
     url: "https://bibihalemech.github.io/assets/",
   },
+  {
+    title: "להעיר את ביבי",
+    url: "https://bibihalemech.github.io/wakebibi1b/",
+  },
 ];
 
 type MoreGamesButtonOptions = {
@@ -45,7 +49,7 @@ export function addMoreGamesButton(
 function openMoreGamesPanel(scene: Phaser.Scene): void {
   const depth = 4000;
   const panelWidth = 720;
-  const panelHeight = 420;
+  const panelHeight = 520;
   const cx = STAGE_WIDTH / 2;
   const cy = STAGE_HEIGHT / 2;
 
@@ -92,7 +96,7 @@ function openMoreGamesPanel(scene: Phaser.Scene): void {
   const items: Phaser.GameObjects.GameObject[] = [dim, panel, panelHit, title];
 
   MORE_GAMES.forEach((game, index) => {
-    const y = cy - 40 + index * 110;
+    const y = cy - 80 + index * 100;
     const button = addPillButton(scene, {
       label: game.title,
       x: cx,
