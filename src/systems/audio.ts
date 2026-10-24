@@ -1,7 +1,7 @@
 import { publicUrl } from "../publicUrl";
 import { isMuted } from "./session";
 
-const BONUS_MUSIC_URL = publicUrl("assets/audio/fast_bonus.mp3");
+const BONUS_MUSIC_PATH = "assets/audio/fast_bonus.mp3";
 const BONUS_MUSIC_START_SEC = 4;
 
 type Voice = {
@@ -12,8 +12,15 @@ type Voice = {
 let context: AudioContext | null = null;
 let musicTimer: number | null = null;
 let musicStep = 0;
-let bonusTrack: HTMLAudioElement | null = null;
+let bonusBuffer: AudioBuffer | null = null;
+let bonusSource: AudioBufferSourceNode | null = null;
+let bonusGain: GainNode | null = null;
+let bonusLoad: Promise<AudioBuffer | null> | null = null;
 const voices: Voice[] = [];
+
+function resolveUrl(path: string): string {
+  return new URL(publicUrl(path), window.location.href).href;
+}
 
 function getContext(): AudioContext | null {
   const Ctor =
@@ -70,11 +77,81 @@ function beep(
   };
 }
 
+function loadBonusBuffer(): Promise<AudioBuffer | null> {
+  if (bonusBuffer) {
+    return Promise.resolve(bonusBuffer);
+  }
+  if (bonusLoad) {
+    return bonusLoad;
+  }
+  const audio = getContext();
+  if (!audio) {
+    return Promise.resolve(null);
+  }
+  bonusLoad = fetch(resolveUrl(BONUS_MUSIC_PATH))
+    .then((response) => {
+      if (!response.ok) {
+        throw new Error(`bonus music HTTP ${response.status}`);
+      }
+      return response.arrayBuffer();
+    })
+    .then((data) => audio.decodeAudioData(data.slice(0)))
+    .then((buffer) => {
+      bonusBuffer = buffer;
+      return buffer;
+    })
+    .catch(() => {
+      bonusLoad = null;
+      return null;
+    });
+  return bonusLoad;
+}
+
+function stopBonusSource(): void {
+  if (bonusSource) {
+    try {
+      bonusSource.onended = null;
+      bonusSource.stop();
+    } catch {
+      // Already stopped.
+    }
+    bonusSource.disconnect();
+    bonusSource = null;
+  }
+  if (bonusGain) {
+    bonusGain.disconnect();
+    bonusGain = null;
+  }
+}
+
+function playBonusBuffer(buffer: AudioBuffer): void {
+  const audio = getContext();
+  if (!audio || !canPlay()) {
+    return;
+  }
+  stopBonusSource();
+  void audio.resume();
+  const gain = audio.createGain();
+  gain.gain.value = 0.6;
+  gain.connect(audio.destination);
+  const source = audio.createBufferSource();
+  source.buffer = buffer;
+  source.loop = true;
+  const startAt = Math.min(BONUS_MUSIC_START_SEC, Math.max(0, buffer.duration - 0.05));
+  source.loopStart = startAt;
+  source.loopEnd = buffer.duration;
+  source.connect(gain);
+  source.start(0, startAt);
+  bonusSource = source;
+  bonusGain = gain;
+}
+
 export function unlockAudio(): void {
   const audio = getContext();
   if (audio) {
     void audio.resume();
   }
+  void loadBonusBuffer();
 }
 
 export function playPickup(): void {
@@ -152,51 +229,28 @@ export function startBonusMusic(): void {
     return;
   }
   stopBackgroundMusic();
-  if (!bonusTrack) {
-    bonusTrack = new Audio(BONUS_MUSIC_URL);
-    bonusTrack.loop = false;
-    bonusTrack.volume = 0.6;
-    bonusTrack.dataset.bgMusic = "fast-bonus";
-    document.body.appendChild(bonusTrack);
-    bonusTrack.addEventListener("ended", () => {
-      if (!bonusTrack || isMuted()) {
-        return;
-      }
-      bonusTrack.currentTime = BONUS_MUSIC_START_SEC;
-      void bonusTrack.play().catch(() => undefined);
-    });
-  }
-  const begin = (): void => {
-    if (!bonusTrack) {
+  const play = (buffer: AudioBuffer | null): void => {
+    if (!buffer || isMuted()) {
       return;
     }
-    bonusTrack.currentTime = BONUS_MUSIC_START_SEC;
-    void bonusTrack.play().catch(() => {
-      // Browser blocked autoplay until a later gesture.
-    });
+    playBonusBuffer(buffer);
   };
-  if (bonusTrack.readyState >= 1) {
-    begin();
-  } else {
-    bonusTrack.addEventListener("loadedmetadata", begin, { once: true });
+  if (bonusBuffer) {
+    play(bonusBuffer);
+    return;
   }
+  void loadBonusBuffer().then(play);
 }
 
 export function stopBonusMusic(): void {
-  if (bonusTrack) {
-    bonusTrack.pause();
-    bonusTrack.currentTime = BONUS_MUSIC_START_SEC;
-  }
+  stopBonusSource();
   startBackgroundMusic();
 }
 
 export function setMusicEnabled(enabled: boolean): void {
   if (!enabled) {
     stopBackgroundMusic();
-    if (bonusTrack) {
-      bonusTrack.pause();
-      bonusTrack.currentTime = BONUS_MUSIC_START_SEC;
-    }
+    stopBonusSource();
     return;
   }
   startBackgroundMusic();
