@@ -12,14 +12,12 @@ type Voice = {
 let context: AudioContext | null = null;
 let musicTimer: number | null = null;
 let musicStep = 0;
-let bonusBuffer: AudioBuffer | null = null;
-let bonusSource: AudioBufferSourceNode | null = null;
-let bonusGain: GainNode | null = null;
-let bonusLoad: Promise<AudioBuffer | null> | null = null;
+let bonusTrack: HTMLAudioElement | null = null;
+let bonusShouldPlay = false;
 const voices: Voice[] = [];
 
-function resolveUrl(path: string): string {
-  return new URL(publicUrl(path), window.location.href).href;
+function bonusMusicUrl(): string {
+  return new URL(publicUrl(BONUS_MUSIC_PATH), window.location.href).href;
 }
 
 function getContext(): AudioContext | null {
@@ -77,73 +75,30 @@ function beep(
   };
 }
 
-function loadBonusBuffer(): Promise<AudioBuffer | null> {
-  if (bonusBuffer) {
-    return Promise.resolve(bonusBuffer);
+function ensureBonusTrack(): HTMLAudioElement {
+  if (bonusTrack) {
+    return bonusTrack;
   }
-  if (bonusLoad) {
-    return bonusLoad;
-  }
-  const audio = getContext();
-  if (!audio) {
-    return Promise.resolve(null);
-  }
-  bonusLoad = fetch(resolveUrl(BONUS_MUSIC_PATH))
-    .then((response) => {
-      if (!response.ok) {
-        throw new Error(`bonus music HTTP ${response.status}`);
-      }
-      return response.arrayBuffer();
-    })
-    .then((data) => audio.decodeAudioData(data.slice(0)))
-    .then((buffer) => {
-      bonusBuffer = buffer;
-      return buffer;
-    })
-    .catch(() => {
-      bonusLoad = null;
-      return null;
-    });
-  return bonusLoad;
+  const track = new Audio();
+  track.preload = "auto";
+  track.loop = true;
+  track.volume = 0.7;
+  track.src = bonusMusicUrl();
+  track.load();
+  bonusTrack = track;
+  return track;
 }
 
-function stopBonusSource(): void {
-  if (bonusSource) {
-    try {
-      bonusSource.onended = null;
-      bonusSource.stop();
-    } catch {
-      // Already stopped.
-    }
-    bonusSource.disconnect();
-    bonusSource = null;
-  }
-  if (bonusGain) {
-    bonusGain.disconnect();
-    bonusGain = null;
-  }
-}
-
-function playBonusBuffer(buffer: AudioBuffer): void {
-  const audio = getContext();
-  if (!audio || !canPlay()) {
+function seekBonusStart(track: HTMLAudioElement): void {
+  if (!Number.isFinite(track.duration) || track.duration <= 0) {
     return;
   }
-  stopBonusSource();
-  void audio.resume();
-  const gain = audio.createGain();
-  gain.gain.value = 0.6;
-  gain.connect(audio.destination);
-  const source = audio.createBufferSource();
-  source.buffer = buffer;
-  source.loop = true;
-  const startAt = Math.min(BONUS_MUSIC_START_SEC, Math.max(0, buffer.duration - 0.05));
-  source.loopStart = startAt;
-  source.loopEnd = buffer.duration;
-  source.connect(gain);
-  source.start(0, startAt);
-  bonusSource = source;
-  bonusGain = gain;
+  const startAt = Math.min(BONUS_MUSIC_START_SEC, Math.max(0, track.duration - 0.05));
+  try {
+    track.currentTime = startAt;
+  } catch {
+    // Ignore seek errors before the media element is ready.
+  }
 }
 
 export function unlockAudio(): void {
@@ -151,7 +106,27 @@ export function unlockAudio(): void {
   if (audio) {
     void audio.resume();
   }
-  void loadBonusBuffer();
+  const track = ensureBonusTrack();
+  // Prime HTMLMediaElement during the user gesture so mid-game play() is allowed.
+  // Do not pause if bonus music has already been requested (slow buffering race).
+  const previousMuted = track.muted;
+  track.muted = true;
+  void track
+    .play()
+    .then(() => {
+      if (bonusShouldPlay) {
+        track.muted = false;
+        return;
+      }
+      track.pause();
+      seekBonusStart(track);
+      track.muted = previousMuted;
+    })
+    .catch(() => {
+      if (!bonusShouldPlay) {
+        track.muted = previousMuted;
+      }
+    });
 }
 
 export function playPickup(): void {
@@ -228,29 +203,60 @@ export function startBonusMusic(): void {
   if (!canPlay()) {
     return;
   }
+  bonusShouldPlay = true;
   stopBackgroundMusic();
-  const play = (buffer: AudioBuffer | null): void => {
-    if (!buffer || isMuted()) {
+  const track = ensureBonusTrack();
+  track.muted = false;
+  track.volume = 0.7;
+
+  const begin = (): void => {
+    if (!bonusTrack || !bonusShouldPlay || isMuted()) {
       return;
     }
-    playBonusBuffer(buffer);
+    seekBonusStart(bonusTrack);
+    void bonusTrack.play().catch(() => {
+      window.setTimeout(() => {
+        if (!bonusTrack || !bonusShouldPlay || isMuted()) {
+          return;
+        }
+        void bonusTrack.play().catch(() => undefined);
+      }, 150);
+    });
   };
-  if (bonusBuffer) {
-    play(bonusBuffer);
-    return;
+
+  if (track.readyState >= 2) {
+    begin();
+  } else {
+    track.addEventListener("canplay", begin, { once: true });
+    track.addEventListener(
+      "error",
+      () => {
+        bonusTrack = null;
+        const retry = ensureBonusTrack();
+        retry.addEventListener("canplay", begin, { once: true });
+      },
+      { once: true },
+    );
   }
-  void loadBonusBuffer().then(play);
 }
 
 export function stopBonusMusic(): void {
-  stopBonusSource();
+  bonusShouldPlay = false;
+  if (bonusTrack) {
+    bonusTrack.pause();
+    seekBonusStart(bonusTrack);
+  }
   startBackgroundMusic();
 }
 
 export function setMusicEnabled(enabled: boolean): void {
   if (!enabled) {
     stopBackgroundMusic();
-    stopBonusSource();
+    bonusShouldPlay = false;
+    if (bonusTrack) {
+      bonusTrack.pause();
+      seekBonusStart(bonusTrack);
+    }
     return;
   }
   startBackgroundMusic();
